@@ -1,0 +1,539 @@
+"""
+Student Performance Analysis - Deep Learning Project
+Complete Ready-to-Use Code
+Dataset: student_project.csv
+Target: grade
+"""
+
+# ============================================
+# PART 1: IMPORT LIBRARIES
+# ============================================
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings('ignore')
+
+# Deep Learning
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+
+# Machine Learning utilities
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.metrics import (confusion_matrix, classification_report, 
+                            roc_curve, auc, accuracy_score)
+
+# Set style
+sns.set_style('whitegrid')
+plt.rcParams['figure.figsize'] = (10, 6)
+
+print("✓ All libraries imported successfully!")
+
+# ============================================
+# PART 2: LOAD DATASET
+# ============================================
+# Load your dataset
+df = pd.read_csv('student_project.csv')
+
+print("\n" + "="*50)
+print("DATASET OVERVIEW")
+print("="*50)
+print(f"Dataset Shape: {df.shape}")
+print(f"Total Records: {df.shape[0]}")
+print(f"Total Features: {df.shape[1]}")
+print("\nColumn Names:")
+print(df.columns.tolist())
+
+# Display first few rows
+print("\nFirst 5 rows:")
+print(df.head())
+
+# ============================================
+# PART 3: EXPLORATORY DATA ANALYSIS (EDA)
+# ============================================
+print("\n" + "="*50)
+print("EXPLORATORY DATA ANALYSIS")
+print("="*50)
+
+# Basic info
+print("\nDataset Info:")
+print(df.info())
+
+# Statistical summary
+print("\nStatistical Summary:")
+print(df.describe())
+
+# Check data types
+print("\nData Types:")
+print(df.dtypes)
+
+# Check missing values
+print("\nMissing Values:")
+missing_values = df.isnull().sum()
+print(missing_values[missing_values > 0])
+
+# Check duplicates
+print(f"\nDuplicate Rows: {df.duplicated().sum()}")
+
+# Check unique values in grade column
+print("\nUnique Grades:")
+print(df['grade'].value_counts())
+
+# ============================================
+# PART 4: DATA PREPROCESSING
+# ============================================
+print("\n" + "="*50)
+print("DATA PREPROCESSING")
+print("="*50)
+
+# Create a copy for preprocessing
+df_clean = df.copy()
+
+# Drop student_id as it's not useful for prediction
+if 'student_id' in df_clean.columns:
+    df_clean = df_clean.drop('student_id', axis=1)
+    print("\n✓ Removed student_id column")
+
+# 1. Handle Missing Values
+print("\n1. Handling Missing Values...")
+# For numerical columns - fill with mean
+numerical_cols = df_clean.select_dtypes(include=[np.number]).columns
+for col in numerical_cols:
+    if df_clean[col].isnull().sum() > 0:
+        df_clean[col].fillna(df_clean[col].mean(), inplace=True)
+        print(f"   Filled {col} with mean")
+
+# For categorical columns - fill with mode
+categorical_cols = df_clean.select_dtypes(include=['object']).columns
+for col in categorical_cols:
+    if df_clean[col].isnull().sum() > 0:
+        df_clean[col].fillna(df_clean[col].mode()[0], inplace=True)
+        print(f"   Filled {col} with mode")
+
+print("✓ No missing values found or all handled!")
+
+# 2. Remove Duplicates
+duplicates_before = df_clean.duplicated().sum()
+df_clean.drop_duplicates(inplace=True)
+if duplicates_before > 0:
+    print(f"\n2. Removed {duplicates_before} duplicate rows")
+else:
+    print("\n2. No duplicates found!")
+
+# 3. Encode the target variable (grade)
+print("\n3. Encoding target variable (grade)...")
+le_grade = LabelEncoder()
+df_clean['grade_encoded'] = le_grade.fit_transform(df_clean['grade'])
+print(f"   Grade mapping: {dict(zip(le_grade.classes_, le_grade.transform(le_grade.classes_)))}")
+
+print(f"\n✓ Cleaned Dataset Shape: {df_clean.shape}")
+
+# ============================================
+# PART 5: DATA VISUALIZATION (Minimum 5)
+# ============================================
+print("\n" + "="*50)
+print("CREATING VISUALIZATIONS")
+print("="*50)
+
+# Create visualizations directory
+import os
+if not os.path.exists('visualizations'):
+    os.makedirs('visualizations')
+    print("✓ Created 'visualizations' folder")
+
+# Visualization 1: Correlation Heatmap
+print("\n1. Creating Correlation Heatmap...")
+plt.figure(figsize=(10, 8))
+correlation_matrix = df_clean[['weekly_self_study_hours', 'attendance_percentage', 
+                                'class_participation', 'total_score', 'grade_encoded']].corr()
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', 
+            center=0, fmt='.2f', square=True, linewidths=1)
+plt.title('Feature Correlation Heatmap', fontsize=16, fontweight='bold', pad=20)
+plt.tight_layout()
+plt.savefig('visualizations/01_correlation_heatmap.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 01_correlation_heatmap.png")
+
+# Visualization 2: Distribution of Grades
+print("\n2. Creating Grade Distribution...")
+plt.figure(figsize=(10, 6))
+grade_counts = df_clean['grade'].value_counts()
+plt.bar(grade_counts.index, grade_counts.values, color='skyblue', edgecolor='black')
+plt.title('Distribution of Student Grades', fontsize=16, fontweight='bold')
+plt.xlabel('Grade', fontsize=12)
+plt.ylabel('Number of Students', fontsize=12)
+plt.grid(alpha=0.3, axis='y')
+for i, v in enumerate(grade_counts.values):
+    plt.text(i, v + 0.5, str(v), ha='center', fontweight='bold')
+plt.tight_layout()
+plt.savefig('visualizations/02_grade_distribution.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 02_grade_distribution.png")
+
+# Visualization 3: Study Hours vs Total Score
+print("\n3. Creating Study Hours vs Total Score scatter plot...")
+plt.figure(figsize=(10, 6))
+scatter = plt.scatter(df_clean['weekly_self_study_hours'], 
+                     df_clean['total_score'], 
+                     c=df_clean['grade_encoded'], 
+                     cmap='viridis', 
+                     s=100, 
+                     alpha=0.6,
+                     edgecolor='black')
+plt.colorbar(scatter, label='Grade (Encoded)')
+plt.title('Study Hours vs Total Score', fontsize=16, fontweight='bold')
+plt.xlabel('Weekly Self Study Hours', fontsize=12)
+plt.ylabel('Total Score', fontsize=12)
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig('visualizations/03_study_vs_score.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 03_study_vs_score.png")
+
+# Visualization 4: Attendance vs Total Score
+print("\n4. Creating Attendance vs Total Score scatter plot...")
+plt.figure(figsize=(10, 6))
+scatter = plt.scatter(df_clean['attendance_percentage'], 
+                     df_clean['total_score'], 
+                     c=df_clean['grade_encoded'], 
+                     cmap='plasma', 
+                     s=100, 
+                     alpha=0.6,
+                     edgecolor='black')
+plt.colorbar(scatter, label='Grade (Encoded)')
+plt.title('Attendance vs Total Score', fontsize=16, fontweight='bold')
+plt.xlabel('Attendance Percentage', fontsize=12)
+plt.ylabel('Total Score', fontsize=12)
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig('visualizations/04_attendance_vs_score.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 04_attendance_vs_score.png")
+
+# Visualization 5: Boxplot for all features
+print("\n5. Creating Boxplot...")
+plt.figure(figsize=(12, 6))
+features_to_plot = ['weekly_self_study_hours', 'attendance_percentage', 
+                    'class_participation', 'total_score']
+df_clean[features_to_plot].boxplot()
+plt.title('Boxplot - Feature Distribution & Outliers', fontsize=16, fontweight='bold')
+plt.ylabel('Values', fontsize=12)
+plt.xticks(rotation=45, ha='right')
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig('visualizations/05_boxplot_features.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 05_boxplot_features.png")
+
+# Visualization 6: Feature distributions
+print("\n6. Creating Feature Distribution plots...")
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+features = ['weekly_self_study_hours', 'attendance_percentage', 
+            'class_participation', 'total_score']
+colors = ['coral', 'lightblue', 'lightgreen', 'plum']
+
+for idx, (ax, col, color) in enumerate(zip(axes.ravel(), features, colors)):
+    ax.hist(df_clean[col], bins=20, edgecolor='black', color=color, alpha=0.7)
+    ax.set_title(f'{col}', fontweight='bold', fontsize=12)
+    ax.set_xlabel('Value')
+    ax.set_ylabel('Frequency')
+    ax.grid(alpha=0.3)
+
+plt.suptitle('Distribution of All Features', fontsize=16, fontweight='bold', y=1.00)
+plt.tight_layout()
+plt.savefig('visualizations/06_feature_distributions.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 06_feature_distributions.png")
+
+print("\n✓ All 6 visualizations created successfully!")
+
+# ============================================
+# PART 6: PREPARE DATA FOR MODELING
+# ============================================
+print("\n" + "="*50)
+print("PREPARING DATA FOR MODELING")
+print("="*50)
+
+# Separate features and target
+X = df_clean[['weekly_self_study_hours', 'attendance_percentage', 
+              'class_participation', 'total_score']]
+y = df_clean['grade_encoded']
+
+print(f"\nFeatures shape: {X.shape}")
+print(f"Target shape: {y.shape}")
+print(f"Number of classes: {len(df_clean['grade'].unique())}")
+
+# Normalize/Standardize features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+X_scaled = pd.DataFrame(X_scaled, columns=X.columns)
+
+# Split data: 70% train, 15% validation, 15% test
+X_train, X_temp, y_train, y_temp = train_test_split(
+    X_scaled, y, test_size=0.3, random_state=42, stratify=y
+)
+X_val, X_test, y_val, y_test = train_test_split(
+    X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
+)
+
+print(f"\nTraining set: {X_train.shape[0]} samples")
+print(f"Validation set: {X_val.shape[0]} samples")
+print(f"Test set: {X_test.shape[0]} samples")
+
+# ============================================
+# PART 7: BUILD DEEP LEARNING MODEL (MLP)
+# ============================================
+print("\n" + "="*50)
+print("BUILDING DEEP LEARNING MODEL")
+print("="*50)
+
+# Determine problem parameters
+n_classes = len(y.unique())
+output_units = n_classes
+output_activation = 'softmax'
+loss_function = 'sparse_categorical_crossentropy'
+
+print(f"\nProblem Type: Multi-class Classification")
+print(f"Number of Classes: {n_classes}")
+
+# Build MLP Model
+model = keras.Sequential([
+    layers.Dense(128, activation='relu', input_shape=(X_train.shape[1],)),
+    layers.BatchNormalization(),
+    layers.Dropout(0.3),
+    
+    layers.Dense(64, activation='relu'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.3),
+    
+    layers.Dense(32, activation='relu'),
+    layers.BatchNormalization(),
+    layers.Dropout(0.2),
+    
+    layers.Dense(16, activation='relu'),
+    layers.Dropout(0.2),
+    
+    layers.Dense(output_units, activation=output_activation)
+], name='Student_Grade_Predictor')
+
+# Compile model
+model.compile(
+    optimizer=keras.optimizers.Adam(learning_rate=0.001),
+    loss=loss_function,
+    metrics=['accuracy']
+)
+
+# Display model architecture
+print("\nModel Architecture:")
+model.summary()
+
+# ============================================
+# PART 8: TRAIN THE MODEL
+# ============================================
+print("\n" + "="*50)
+print("TRAINING THE MODEL")
+print("="*50)
+
+# Define callbacks
+early_stopping = EarlyStopping(
+    monitor='val_loss',
+    patience=15,
+    restore_best_weights=True,
+    verbose=1
+)
+
+reduce_lr = ReduceLROnPlateau(
+    monitor='val_loss',
+    factor=0.5,
+    patience=5,
+    min_lr=1e-7,
+    verbose=1
+)
+
+# Train model
+print("\nStarting training...")
+history = model.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=100,
+    batch_size=32,
+    callbacks=[early_stopping, reduce_lr],
+    verbose=1
+)
+
+print("\n✓ Training completed!")
+
+# Save model
+if not os.path.exists('models'):
+    os.makedirs('models')
+model.save('models/student_grade_model.h5')
+print("✓ Model saved: models/student_grade_model.h5")
+
+# ============================================
+# PART 9: EVALUATE MODEL
+# ============================================
+print("\n" + "="*50)
+print("MODEL EVALUATION")
+print("="*50)
+
+# Evaluate on test set
+test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+print(f"\nTest Loss: {test_loss:.4f}")
+print(f"Test Accuracy: {test_accuracy:.4f} ({test_accuracy*100:.2f}%)")
+
+# Make predictions
+y_pred_proba = model.predict(X_test)
+y_pred = np.argmax(y_pred_proba, axis=1)
+
+# Classification Report
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=le_grade.classes_))
+
+# ============================================
+# PART 10: RESULT VISUALIZATIONS
+# ============================================
+print("\n" + "="*50)
+print("CREATING RESULT VISUALIZATIONS")
+print("="*50)
+
+# Visualization 7: Training History
+print("\n7. Creating Training History plots...")
+fig, axes = plt.subplots(1, 2, figsize=(15, 5))
+
+# Loss plot
+axes[0].plot(history.history['loss'], label='Training Loss', linewidth=2, color='blue')
+axes[0].plot(history.history['val_loss'], label='Validation Loss', linewidth=2, color='red')
+axes[0].set_title('Model Loss Over Epochs', fontsize=14, fontweight='bold')
+axes[0].set_xlabel('Epoch')
+axes[0].set_ylabel('Loss')
+axes[0].legend()
+axes[0].grid(alpha=0.3)
+
+# Accuracy plot
+axes[1].plot(history.history['accuracy'], label='Training Accuracy', linewidth=2, color='green')
+axes[1].plot(history.history['val_accuracy'], label='Validation Accuracy', linewidth=2, color='orange')
+axes[1].set_title('Model Accuracy Over Epochs', fontsize=14, fontweight='bold')
+axes[1].set_xlabel('Epoch')
+axes[1].set_ylabel('Accuracy')
+axes[1].legend()
+axes[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('visualizations/07_training_history.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 07_training_history.png")
+
+# Visualization 8: Confusion Matrix
+print("\n8. Creating Confusion Matrix...")
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=True,
+            xticklabels=le_grade.classes_, yticklabels=le_grade.classes_)
+plt.title('Confusion Matrix', fontsize=16, fontweight='bold')
+plt.ylabel('Actual Grade')
+plt.xlabel('Predicted Grade')
+plt.tight_layout()
+plt.savefig('visualizations/08_confusion_matrix.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 08_confusion_matrix.png")
+
+# Visualization 9: Performance Summary
+print("\n9. Creating Performance Summary...")
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.axis('off')
+
+metrics_text = f"""
+MODEL PERFORMANCE SUMMARY
+{'='*55}
+
+Model: Multi-Layer Perceptron (MLP)
+Problem Type: Multi-class Classification
+Target: Student Grade Prediction
+
+Training Metrics:
+• Final Training Loss: {history.history['loss'][-1]:.4f}
+• Final Training Accuracy: {history.history['accuracy'][-1]:.4f}
+• Final Validation Loss: {history.history['val_loss'][-1]:.4f}
+• Final Validation Accuracy: {history.history['val_accuracy'][-1]:.4f}
+
+Test Metrics:
+• Test Loss: {test_loss:.4f}
+• Test Accuracy: {test_accuracy:.4f} ({test_accuracy*100:.2f}%)
+
+Model Architecture:
+• Input Features: {X_train.shape[1]} (study hours, attendance, participation, score)
+• Hidden Layers: 4 (128→64→32→16 neurons)
+• Output Classes: {output_units} grades
+• Total Parameters: {model.count_params():,}
+
+Training Configuration:
+• Optimizer: Adam
+• Learning Rate: 0.001
+• Batch Size: 32
+• Epochs Trained: {len(history.history['loss'])}
+"""
+
+ax.text(0.1, 0.5, metrics_text, fontsize=11, family='monospace',
+        verticalalignment='center')
+plt.tight_layout()
+plt.savefig('visualizations/09_performance_summary.png', dpi=300, bbox_inches='tight')
+plt.show()
+print("   ✓ Saved: 09_performance_summary.png")
+
+# ============================================
+# PART 11: SAVE RESULTS
+# ============================================
+print("\n" + "="*50)
+print("SAVING RESULTS")
+print("="*50)
+
+if not os.path.exists('results'):
+    os.makedirs('results')
+
+# Save predictions
+results_df = pd.DataFrame({
+    'Actual_Grade_Encoded': y_test.values,
+    'Predicted_Grade_Encoded': y_pred,
+    'Actual_Grade': le_grade.inverse_transform(y_test.values),
+    'Predicted_Grade': le_grade.inverse_transform(y_pred)
+})
+results_df.to_csv('results/predictions.csv', index=False)
+print("✓ Predictions saved: results/predictions.csv")
+
+# Save training history
+history_df = pd.DataFrame(history.history)
+history_df.to_csv('results/training_history.csv', index=False)
+print("✓ Training history saved: results/training_history.csv")
+
+# ============================================
+# FINAL SUMMARY
+# ============================================
+print("\n" + "="*50)
+print("🎉 PROJECT COMPLETED SUCCESSFULLY! 🎉")
+print("="*50)
+print("\n✓ Dataset loaded and explored")
+print("✓ Data preprocessed and cleaned")
+print("✓ 9 visualizations created")
+print("✓ Deep learning model built and trained")
+print(f"✓ Model achieved {test_accuracy*100:.2f}% accuracy!")
+print("✓ Results visualized and saved")
+print("✓ All files saved successfully")
+print("\n" + "="*50)
+print("GENERATED FILES:")
+print("="*50)
+print("📁 visualizations/ - 9 visualization images")
+print("📁 models/ - Trained model file")
+print("📁 results/ - Predictions and training history")
+print("\n" + "="*50)
+print("NEXT STEPS:")
+print("="*50)
+print("1. Check 'visualizations' folder for all images")
+print("2. Write your project report using these results")
+print("3. Upload everything to GitHub")
+print("4. Submit GitHub link via Google Form")
+print("\n🎓 Good luck with your assignment!")
+print("="*50)
